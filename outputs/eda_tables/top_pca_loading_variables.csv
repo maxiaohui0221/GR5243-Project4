@@ -1,0 +1,4 @@
+,top_variables
+PC1,"roa, saleq, ceqq, atq, ltq, cogsq, niq, dlttq"
+PC2,"roa, ceqq, cheq, atq, ltq, mv_end, vol_avg, dlttq"
+PC3,"ceqq, asset_turnover, saleq, cogsq, vol_d, dlttq, vol_avg, dlcq"
