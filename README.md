@@ -39,6 +39,13 @@ outputs/feature_engineering/
 
 Key outputs include the full engineered dataset, train/validation/test splits, `feature_preprocessor.joblib`, PCA/KMeans artifacts, feature metadata, and an automatically generated output report.
 
+The feature table keeps the original equal-weight benchmark target and adds S&P 500 comparison targets:
+
+- `target_excess_return_3m`: stock return minus equal-weight market return.
+- `target_outperform_next_quarter`: 1 if the stock beats the equal-weight market proxy.
+- `target_sp500_excess_return_3m`: stock return minus S&P 500 return.
+- `target_outperform_sp500_next_quarter`: 1 if the stock beats the S&P 500.
+
 ## Environment
 
 Install the analysis dependencies:

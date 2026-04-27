@@ -16,8 +16,10 @@ Two targets are created:
 
 - `target_excess_return_3m`: next 3-month compounded stock return minus the next 3-month equal-weight market return from the sample.
 - `target_outperform_next_quarter`: binary target equal to 1 when `target_excess_return_3m` is positive.
+- `target_sp500_excess_return_3m`: next 3-month compounded stock return minus the next 3-month S&P 500 return.
+- `target_outperform_sp500_next_quarter`: binary target equal to 1 when `target_sp500_excess_return_3m` is positive.
 
-The target uses months after the observation date only. Chronological train/validation/test splits are used so preprocessing and unsupervised transformations are fitted on the training period before being applied to later periods.
+The equal-weight benchmark remains the primary target, and the S&P 500 benchmark is added as an additional comparison. Both targets use months after the observation date only. Chronological train/validation/test splits are used so preprocessing and unsupervised transformations are fitted on the training period before being applied to later periods.
 
 ## Feature Families
 
@@ -82,5 +84,6 @@ Running the script creates:
 - `outputs/feature_engineering/feature_unsupervised_artifacts.joblib`
 - `outputs/feature_engineering/feature_metadata.json`
 - `outputs/feature_engineering/feature_engineering_output_report.md`
+- `data/sp500_daily.csv`: S&P 500 price-index data used to construct the additional S&P 500 benchmark target.
 
 These files give the supervised modeling section a clean, reproducible input table with transparent targets, engineered predictors, preprocessing artifacts, and split documentation.

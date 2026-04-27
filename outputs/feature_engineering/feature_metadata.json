@@ -2,6 +2,7 @@
   "config": {
     "input_path": "compustat_crsp_merged_matched_only.csv",
     "output_dir": "outputs/feature_engineering",
+    "sp500_input_path": "",
     "target_horizon_months": 3,
     "train_fraction": 0.7,
     "validation_fraction": 0.15,
@@ -12,9 +13,11 @@
     "kmeans_clusters": 5
   },
   "resolved_input_path": "/Users/yiyi/Downloads/New Folder With Items 2/outputs/merged_crsp_compustat.csv.gz",
+  "sp500_input_path": "/Users/yiyi/Documents/GitHub/GR5243-Project4/data/sp500_daily.csv",
   "input_rows": 764912,
   "engineered_rows": 202571,
   "model_rows": 191513,
+  "sp500_target_nonmissing_rows": 191513,
   "split_notes": {
     "train_end_date": "2023-12-31",
     "validation_end_date": "2024-10-31",
@@ -420,7 +423,9 @@
   ],
   "target_columns": [
     "target_excess_return_3m",
-    "target_outperform_next_quarter"
+    "target_outperform_next_quarter",
+    "target_sp500_excess_return_3m",
+    "target_outperform_sp500_next_quarter"
   ],
   "pca_explained_variance_ratio": [
     0.22493696426914073,

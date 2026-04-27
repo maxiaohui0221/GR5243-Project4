@@ -25,7 +25,7 @@ os.environ.setdefault("LOKY_MAX_CPU_COUNT", str(os.cpu_count() or 1))
 os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
 warnings.filterwarnings(
     "ignore",
-    message="Could not find the number of physical cores*",
+    message=".*Could not find the number of physical cores.*",
     category=UserWarning,
 )
 
@@ -65,6 +65,9 @@ TARGET_RETURN_COL = "target_excess_return_3m"
 TARGET_BINARY_COL = "target_outperform_next_quarter"
 TARGET_RAW_RETURN_COL = "target_stock_return_3m"
 TARGET_MARKET_RETURN_COL = "target_market_return_3m"
+SP500_RETURN_COL = "target_sp500_return_3m"
+SP500_EXCESS_RETURN_COL = "target_sp500_excess_return_3m"
+SP500_BINARY_COL = "target_outperform_sp500_next_quarter"
 
 INPUT_CANDIDATE_NAMES = [
     "compustat_crsp_merged_matched_only.csv",
@@ -87,6 +90,16 @@ TARGET_ALIASES = {
     "target_crsp_return_3m": TARGET_RAW_RETURN_COL,
     "market_return_fwd_3m": TARGET_MARKET_RETURN_COL,
 }
+
+SP500_INPUT_CANDIDATE_NAMES = [
+    "sp500_daily.csv",
+    "sp500.csv",
+    "SP500.csv",
+    "gspc.csv",
+    "GSPC.csv",
+    "spy.csv",
+    "SPY.csv",
+]
 
 IDENTIFIER_COLUMNS = {
     "PERMNO",
@@ -221,6 +234,7 @@ UNSUPERVISED_FEATURE_CANDIDATES = [
 class FeatureEngineeringConfig:
     input_path: str = str(DEFAULT_INPUT)
     output_dir: str = str(DEFAULT_OUTPUT_DIR)
+    sp500_input_path: str = ""
     target_horizon_months: int = 3
     train_fraction: float = 0.70
     validation_fraction: float = 0.15
@@ -381,8 +395,117 @@ def resolve_input_path(path: Path) -> Path:
     )
 
 
+def resolve_sp500_path(path_text: str) -> Path | None:
+    if path_text:
+        path = Path(path_text)
+        if path.exists():
+            return path
+        raise FileNotFoundError(f"S&P 500 input file not found: {path}")
+
+    search_roots = [
+        Path.cwd(),
+        Path.cwd() / "data",
+        Path.cwd() / "outputs",
+        Path.home() / "Downloads",
+    ]
+    for root in search_roots:
+        if not root.exists():
+            continue
+        for name in SP500_INPUT_CANDIDATE_NAMES:
+            direct_candidates = [root / name, root / "data" / name]
+            for candidate in direct_candidates:
+                if candidate.is_file():
+                    return candidate
+            try:
+                matches = sorted(root.rglob(name), key=lambda item: item.stat().st_size, reverse=True)
+            except (OSError, PermissionError):
+                matches = []
+            if matches:
+                return matches[0]
+    return None
+
+
 def read_modeling_data(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, low_memory=False)
+
+
+def read_sp500_monthly(path: Path) -> pd.DataFrame:
+    sp500 = pd.read_csv(path, low_memory=False)
+    sp500.columns = [str(col).strip() for col in sp500.columns]
+    lower_map = {col.lower(): col for col in sp500.columns}
+
+    date_col = next(
+        (
+            lower_map[name]
+            for name in ["date", "observation_date", "month_end", "datetime"]
+            if name in lower_map
+        ),
+        None,
+    )
+    if date_col is None:
+        raise ValueError(
+            f"S&P 500 file {path} needs a date column such as Date or observation_date."
+        )
+
+    return_col = next(
+        (
+            lower_map[name]
+            for name in ["sp500_ret_1m", "sp500_return_1m", "return", "ret", "monthly_return"]
+            if name in lower_map
+        ),
+        None,
+    )
+    price_col = next(
+        (
+            lower_map[name]
+            for name in ["sp500", "close", "adj close", "adj_close", "price", "^gspc", "gspc"]
+            if name in lower_map
+        ),
+        None,
+    )
+
+    sp500["date"] = pd.to_datetime(sp500[date_col], errors="coerce")
+    sp500 = sp500.dropna(subset=["date"]).copy()
+    sp500["month_end"] = sp500["date"].dt.to_period("M").dt.to_timestamp("M")
+
+    if return_col is not None:
+        sp500["sp500_ret_1m"] = pd.to_numeric(sp500[return_col], errors="coerce")
+        monthly = sp500.groupby("month_end", sort=True)["sp500_ret_1m"].last().reset_index()
+    elif price_col is not None:
+        sp500["sp500_price"] = pd.to_numeric(sp500[price_col], errors="coerce")
+        monthly = (
+            sp500.dropna(subset=["sp500_price"])
+            .sort_values("date")
+            .groupby("month_end", sort=True)["sp500_price"]
+            .last()
+            .pct_change()
+            .rename("sp500_ret_1m")
+            .reset_index()
+        )
+    else:
+        raise ValueError(
+            f"S&P 500 file {path} needs either a return column or a price/close column."
+        )
+
+    monthly["sp500_ret_1m"] = monthly["sp500_ret_1m"].clip(lower=-0.999999)
+    monthly["sp500_log_ret_1m"] = np.log1p(monthly["sp500_ret_1m"])
+    return monthly.dropna(subset=["sp500_ret_1m"]).copy()
+
+
+def add_sp500_targets(frame: pd.DataFrame, sp500_path: Path, horizon_months: int) -> pd.DataFrame:
+    df = frame.copy()
+    monthly = read_sp500_monthly(sp500_path)
+    monthly = monthly.sort_values("month_end").reset_index(drop=True)
+    future_logs = [
+        monthly["sp500_log_ret_1m"].shift(-step) for step in range(1, horizon_months + 1)
+    ]
+    monthly[SP500_RETURN_COL] = np.expm1(sum(future_logs))
+
+    df[SP500_RETURN_COL] = df["model_date"].map(monthly.set_index("month_end")[SP500_RETURN_COL])
+    df[SP500_EXCESS_RETURN_COL] = df[TARGET_RAW_RETURN_COL] - df[SP500_RETURN_COL]
+    df[SP500_BINARY_COL] = (df[SP500_EXCESS_RETURN_COL] > 0).astype("Int64")
+    df.loc[df[SP500_EXCESS_RETURN_COL].isna(), SP500_BINARY_COL] = pd.NA
+    return df
 
 
 def standardize_inputs(frame: pd.DataFrame) -> pd.DataFrame:
@@ -769,6 +892,9 @@ def select_feature_columns(frame: pd.DataFrame, config: FeatureEngineeringConfig
         TARGET_BINARY_COL,
         TARGET_RAW_RETURN_COL,
         TARGET_MARKET_RETURN_COL,
+        SP500_RETURN_COL,
+        SP500_EXCESS_RETURN_COL,
+        SP500_BINARY_COL,
         "ret_m_clean",
         "log_ret_m",
     }
@@ -854,6 +980,12 @@ def split_summary(frame: pd.DataFrame) -> pd.DataFrame:
             target_excess_mean=(TARGET_RETURN_COL, "mean"),
             target_excess_median=(TARGET_RETURN_COL, "median"),
             outperformance_rate=(TARGET_BINARY_COL, "mean"),
+            sp500_excess_mean=(SP500_EXCESS_RETURN_COL, "mean")
+            if SP500_EXCESS_RETURN_COL in frame.columns
+            else (TARGET_RETURN_COL, "mean"),
+            sp500_outperformance_rate=(SP500_BINARY_COL, "mean")
+            if SP500_BINARY_COL in frame.columns
+            else (TARGET_BINARY_COL, "mean"),
         )
         .reset_index()
     )
@@ -893,6 +1025,8 @@ def write_dynamic_report(
         "",
         f"- Regression target: `{TARGET_RETURN_COL}` = next 3-month stock return minus next 3-month equal-weight market return.",
         f"- Classification target: `{TARGET_BINARY_COL}` = 1 when the stock outperforms the equal-weight market proxy over the next quarter.",
+        f"- Additional benchmark target: `{SP500_EXCESS_RETURN_COL}` = next 3-month stock return minus next 3-month S&P 500 return.",
+        f"- Additional classification target: `{SP500_BINARY_COL}` = 1 when the stock outperforms the S&P 500 over the next quarter.",
         "- The target uses future months only; current-month features are not used in target construction.",
         "",
         "## Engineered Feature Families",
@@ -915,6 +1049,8 @@ def write_dynamic_report(
         f"- Modelable rows: {metadata['model_rows']:,}",
         f"- Numeric features: {len(numeric_features):,}",
         f"- Categorical features: {len(categorical_features):,}",
+        f"- S&P 500 source: `{metadata.get('sp500_input_path') or 'not provided'}`",
+        f"- Rows with S&P 500 benchmark target: {metadata.get('sp500_target_nonmissing_rows', 0):,}",
         f"- Output directory: `{output_dir}`",
         "",
         "## Split Summary",
@@ -935,11 +1071,14 @@ def write_dynamic_report(
 
 def run_feature_engineering(config: FeatureEngineeringConfig) -> dict:
     input_path = resolve_input_path(Path(config.input_path))
+    sp500_path = resolve_sp500_path(config.sp500_input_path)
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     raw = read_modeling_data(input_path)
     engineered = engineer_features(raw, config)
+    if sp500_path is not None:
+        engineered = add_sp500_targets(engineered, sp500_path, config.target_horizon_months)
     model_df = engineered.loc[engineered[TARGET_RETURN_COL].notna()].copy()
     if model_df.empty:
         raise ValueError("No rows have a nonmissing next-quarter excess-return target.")
@@ -974,14 +1113,23 @@ def run_feature_engineering(config: FeatureEngineeringConfig) -> dict:
     metadata = {
         "config": asdict(config),
         "resolved_input_path": str(input_path),
+        "sp500_input_path": str(sp500_path) if sp500_path is not None else None,
         "input_rows": int(len(raw)),
         "engineered_rows": int(len(engineered)),
         "model_rows": int(len(model_df)),
+        "sp500_target_nonmissing_rows": int(model_df[SP500_EXCESS_RETURN_COL].notna().sum())
+        if SP500_EXCESS_RETURN_COL in model_df.columns
+        else 0,
         "split_notes": split_notes,
         "numeric_features": numeric_features,
         "categorical_features": categorical_features,
         "all_feature_columns": feature_columns,
-        "target_columns": [TARGET_RETURN_COL, TARGET_BINARY_COL],
+        "target_columns": [
+            TARGET_RETURN_COL,
+            TARGET_BINARY_COL,
+            SP500_EXCESS_RETURN_COL,
+            SP500_BINARY_COL,
+        ],
         "pca_explained_variance_ratio": unsupervised_artifacts.get("pca_explained_variance_ratio"),
     }
     with (output_dir / "feature_metadata.json").open("w", encoding="utf-8") as handle:
@@ -995,6 +1143,11 @@ def parse_args() -> FeatureEngineeringConfig:
     parser = argparse.ArgumentParser(description="Run Project 4 advanced feature engineering.")
     parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Path to cleaned Compustat-CRSP matched CSV.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory for engineered outputs.")
+    parser.add_argument(
+        "--sp500-input",
+        default="",
+        help="Optional S&P 500 CSV with date plus price/close or monthly return. Defaults to auto-detecting data/sp500_daily.csv.",
+    )
     parser.add_argument("--horizon", type=int, default=3, help="Forward return horizon in months.")
     parser.add_argument("--pca-components", type=int, default=5, help="Maximum train-fitted PCA components.")
     parser.add_argument("--kmeans-clusters", type=int, default=5, help="Maximum train-fitted KMeans clusters.")
@@ -1002,6 +1155,7 @@ def parse_args() -> FeatureEngineeringConfig:
     return FeatureEngineeringConfig(
         input_path=args.input,
         output_dir=args.output_dir,
+        sp500_input_path=args.sp500_input,
         target_horizon_months=args.horizon,
         pca_components=args.pca_components,
         kmeans_clusters=args.kmeans_clusters,
@@ -1016,7 +1170,10 @@ def main() -> None:
         raise SystemExit(str(exc)) from exc
     print("Feature engineering complete.")
     print(f"Input file: {metadata['resolved_input_path']}")
+    if metadata.get("sp500_input_path"):
+        print(f"S&P 500 file: {metadata['sp500_input_path']}")
     print(f"Model rows: {metadata['model_rows']:,}")
+    print(f"S&P 500 target rows: {metadata.get('sp500_target_nonmissing_rows', 0):,}")
     print(f"Numeric/categorical features: {len(metadata['numeric_features']):,} / {len(metadata['categorical_features']):,}")
     print(f"Outputs written to: {Path(config.output_dir).resolve()}")
 
