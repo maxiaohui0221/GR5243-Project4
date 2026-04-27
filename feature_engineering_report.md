@@ -1,10 +1,5 @@
 # Feature Engineering and Preprocessing
 
-## Rubric Target
-
-The Project 4 feature engineering rubric awards full credit for advanced, creative, and sophisticated feature manipulation that improves predictive power. This section is built to meet that advanced tier by turning the cleaned Compustat-CRSP firm-month panel into a leakage-aware modeling table for next-quarter stock outperformance.
-
-The feature engineering workflow is implemented in `feature_engineering.py`. It can use `compustat_crsp_merged_matched_only.csv`, or it will auto-detect the previously generated `merged_crsp_compustat.csv.gz` file when available.
 
 ## Predictive Target
 
