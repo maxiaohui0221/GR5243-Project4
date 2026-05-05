@@ -1,0 +1,382 @@
+import pandas as pd
+import numpy as np
+
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, confusion_matrix
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
+# 如果你电脑没有 xgboost，先运行：pip install xgboost
+
+from sklearn.ensemble import GradientBoostingClassifier
+
+# 1. Load data
+df = pd.read_csv("/Users/pengyueer/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_ry2hcehhjbi812_20a8/msg/file/2026-04/compustat_crsp_merged_matched_only.csv")
+spy = pd.read_csv("/Users/pengyueer/PycharmProjects/CRSP+COMustat/spy_monthly.csv")
+
+df["date"] = pd.to_datetime(df["date"])
+spy["date"] = pd.to_datetime(spy["date"])
+
+df = df.sort_values(["PERMNO", "date"])
+spy = spy.sort_values("date")
+# 2. Create next-month target
+# 当前月 date 的特征，用来预测下个月 target_month 的表现
+
+df["target_month"] = df["date"] + pd.DateOffset(months=1)
+
+stock_next = df[["PERMNO", "date", "ret_m"]].copy()
+stock_next = stock_next.rename(columns={
+    "date": "target_month",
+    "ret_m": "stock_ret_next"
+})
+
+df = df.merge(stock_next, on=["PERMNO", "target_month"], how="left")
+
+spy_next = spy[["date", "spy_ret"]].copy()
+spy_next = spy_next.rename(columns={
+    "date": "target_month",
+    "spy_ret": "spy_ret_next"
+})
+
+df = df.merge(spy_next, on="target_month", how="left")
+
+df["excess_ret_next"] = df["stock_ret_next"] - df["spy_ret_next"]
+df["y"] = (df["excess_ret_next"] > 0).astype(int)
+
+df = df.dropna(subset=["stock_ret_next", "spy_ret_next", "y"])
+# 3. Simple feature engineering, no PCA, no KMeans
+
+df["log_mv"] = np.log(df["mv_end"].where(df["mv_end"] > 0))
+df["book_to_market"] = df["ceqq"] / df["mv_end"]
+df["leverage"] = df["ltq"] / df["atq"]
+df["cash_to_assets"] = df["cheq"] / df["atq"]
+df["debt_to_assets"] = (df["dlcq"] + df["dlttq"]) / df["atq"]
+df["profit_margin"] = df["niq"] / df["saleq"]
+df["sales_to_assets"] = df["saleq"] / df["atq"]
+
+feature_cols = [
+    "ret_m",
+    "vol_d",
+    "vol_avg",
+    "log_mv",
+    "roa",
+    "asset_turnover",
+    "book_to_market",
+    "leverage",
+    "cash_to_assets",
+    "debt_to_assets",
+    "profit_margin",
+    "sales_to_assets"
+]
+
+model_df = df[["PERMNO", "date", "target_month", "y", "excess_ret_next"] + feature_cols].copy()
+
+model_df = model_df.replace([np.inf, -np.inf], np.nan)
+
+# 4. Time split
+
+train = model_df[(model_df["date"] >= "2020-01-01") & (model_df["date"] <= "2023-12-01")]
+val = model_df[(model_df["date"] >= "2024-01-01") & (model_df["date"] <= "2024-12-01")]
+test = model_df[(model_df["date"] >= "2025-01-01") & (model_df["date"] <= "2025-11-01")]
+
+X_train = train[feature_cols]
+y_train = train["y"]
+
+X_val = val[feature_cols]
+y_val = val["y"]
+
+X_test = test[feature_cols]
+y_test = test["y"]
+
+print("Train:", X_train.shape, y_train.mean())
+print("Val:", X_val.shape, y_val.mean())
+print("Test:", X_test.shape, y_test.mean())
+
+# 5. Helper function
+
+def evaluate_model(name, model, X_train, y_train, X_val, y_val, X_test, y_test):
+    model.fit(X_train, y_train)
+
+    results = {}
+
+    for split_name, X, y in [
+        ("Train", X_train, y_train),
+        ("Validation", X_val, y_val),
+        ("Test", X_test, y_test)
+    ]:
+        pred = model.predict(X)
+        prob = model.predict_proba(X)[:, 1]
+
+        acc = accuracy_score(y, pred)
+        auc = roc_auc_score(y, prob)
+
+        results[split_name] = {
+            "Accuracy": acc,
+            "AUC": auc
+        }
+
+    print(f"\n{name}")
+    print(pd.DataFrame(results).T)
+
+    print("\nTest classification report:")
+    print(classification_report(y_test, model.predict(X_test)))
+
+    return model
+
+# 6. Logistic Regression
+
+logit_model = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()),
+    ("model", LogisticRegression(max_iter=1000, class_weight="balanced"))
+])
+
+logit_model = evaluate_model(
+    "Logistic Regression",
+    logit_model,
+    X_train, y_train,
+    X_val, y_val,
+    X_test, y_test
+)
+
+# 7. Random Forest
+
+rf_model = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("model", RandomForestClassifier(
+        n_estimators=300,
+        max_depth=8,
+        min_samples_leaf=50,
+        random_state=42,
+        n_jobs=-1,
+        class_weight="balanced"
+    ))
+])
+
+rf_model = evaluate_model(
+    "Random Forest",
+    rf_model,
+    X_train, y_train,
+    X_val, y_val,
+    X_test, y_test
+)
+
+# 8. XGBoost
+'''
+xgb_model = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("model", XGBClassifier(
+        n_estimators=300,
+        max_depth=3,
+        learning_rate=0.03,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        eval_metric="logloss",
+        random_state=42,
+        n_jobs=-1
+    ))
+])
+
+xgb_model = evaluate_model(
+    "XGBoost",
+    xgb_model,
+    X_train, y_train,
+    X_val, y_val,
+    X_test, y_test
+)
+'''
+gb_model = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("model", GradientBoostingClassifier(
+        n_estimators=200,
+        learning_rate=0.03,
+        max_depth=3,
+        random_state=42
+    ))
+])
+
+gb_model = evaluate_model(
+    "Gradient Boosting",
+    gb_model,
+    X_train, y_train,
+    X_val, y_val,
+    X_test, y_test
+)
+
+# 9. Compare all models on validation and test
+
+models = {
+    "Logistic": logit_model,
+    "Random Forest": rf_model,
+    "XGBoost": gb_model
+}
+
+summary = []
+
+for name, model in models.items():
+    for split_name, X, y in [
+        ("Validation", X_val, y_val),
+        ("Test", X_test, y_test)
+    ]:
+        pred = model.predict(X)
+        prob = model.predict_proba(X)[:, 1]
+
+        summary.append({
+            "model": name,
+            "split": split_name,
+            "accuracy": accuracy_score(y, pred),
+            "auc": roc_auc_score(y, prob)
+        })
+
+summary_df = pd.DataFrame(summary)
+summary_df
+
+def plot_roc_curve(model, X_test, y_test, model_name):
+    prob = model.predict_proba(X_test)[:, 1]
+    fpr, tpr, thresholds = roc_curve(y_test, prob)
+    roc_auc = auc(fpr, tpr)
+
+    plt.figure(figsize=(6, 5))
+    plt.plot(fpr, tpr, label=f"{model_name} AUC = {roc_auc:.3f}")
+    plt.plot([0, 1], [0, 1], linestyle="--", label="Random Guess")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title(f"ROC Curve - {model_name}")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+plot_roc_curve(logit_model, X_test, y_test, "Logistic Regression")
+result_table = pd.DataFrame({
+    "Split": ["Train", "Validation", "Test"],
+    "Accuracy": [0.513982, 0.498372, 0.491059],
+    "AUC": [0.526318, 0.508876, 0.503754]
+})
+
+plt.figure(figsize=(7, 5))
+plt.plot(result_table["Split"], result_table["Accuracy"], marker="o", label="Accuracy")
+plt.plot(result_table["Split"], result_table["AUC"], marker="o", label="AUC")
+plt.xlabel("Dataset Split")
+plt.ylabel("Score")
+plt.title("Logistic Regression Performance")
+plt.legend()
+plt.tight_layout()
+plt.show()
+plt.savefig("logistic_roc.png", dpi=300)
+
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve, auc
+
+models = {
+    "Logistic": logit_model,
+    "Random Forest": rf_model,
+    "Gradient Boosting": gb_model
+}
+
+summary = []
+
+for name, model in models.items():
+    pred = model.predict(X_test)
+    prob = model.predict_proba(X_test)[:, 1]
+
+    summary.append({
+        "Model": name,
+        "Test Accuracy": accuracy_score(y_test, pred),
+        "Test AUC": roc_auc_score(y_test, prob)
+    })
+
+summary_df = pd.DataFrame(summary)
+print(summary_df)
+
+plt.figure(figsize=(8, 5))
+bars = plt.bar(summary_df["Model"], summary_df["Test AUC"])
+
+for bar in bars:
+    height = bar.get_height()
+    plt.text(
+        bar.get_x() + bar.get_width() / 2,
+        height + 0.001,
+        f"{height:.3f}",
+        ha="center"
+    )
+
+plt.title("Out-of-Sample AUC Comparison")
+plt.ylabel("Test AUC")
+plt.ylim(0.49, 0.525)
+plt.tight_layout()
+plt.savefig("model_auc_comparison.png", dpi=300)
+plt.show()
+plt.figure(figsize=(7, 6))
+
+for name, model in models.items():
+    prob = model.predict_proba(X_test)[:, 1]
+    fpr, tpr, thresholds = roc_curve(y_test, prob)
+    roc_auc = auc(fpr, tpr)
+
+    plt.plot(fpr, tpr, label=f"{name} AUC = {roc_auc:.3f}")
+
+plt.plot([0, 1], [0, 1], linestyle="--", label="Random Guess")
+
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curves on Test Set")
+plt.legend()
+plt.tight_layout()
+plt.savefig("roc_curves_all_models.png", dpi=300)
+plt.show()
+
+overfit_rows = []
+
+for name, model in models.items():
+    train_prob = model.predict_proba(X_train)[:, 1]
+    test_prob = model.predict_proba(X_test)[:, 1]
+
+    overfit_rows.append({
+        "Model": name,
+        "Train AUC": roc_auc_score(y_train, train_prob),
+        "Test AUC": roc_auc_score(y_test, test_prob)
+    })
+
+overfit_df = pd.DataFrame(overfit_rows)
+print(overfit_df)
+
+x = range(len(overfit_df))
+
+plt.figure(figsize=(8, 5))
+plt.plot(overfit_df["Model"], overfit_df["Train AUC"], marker="o", label="Train AUC")
+plt.plot(overfit_df["Model"], overfit_df["Test AUC"], marker="o", label="Test AUC")
+
+plt.title("Train vs Test AUC")
+plt.ylabel("AUC")
+plt.legend()
+plt.tight_layout()
+plt.savefig("train_test_auc_comparison.png", dpi=300)
+plt.show()
+
+rf_classifier = rf_model.named_steps["model"]
+
+feature_importance = pd.DataFrame({
+    "Feature": feature_cols,
+    "Importance": rf_classifier.feature_importances_
+})
+
+feature_importance = feature_importance.sort_values("Importance", ascending=False)
+
+print(feature_importance)
+
+top_features = feature_importance.head(10)
+
+plt.figure(figsize=(8, 5))
+plt.barh(top_features["Feature"][::-1], top_features["Importance"][::-1])
+plt.xlabel("Importance")
+plt.title("Random Forest Feature Importance")
+plt.tight_layout()
+plt.savefig("rf_feature_importance.png", dpi=300)
+plt.show()
