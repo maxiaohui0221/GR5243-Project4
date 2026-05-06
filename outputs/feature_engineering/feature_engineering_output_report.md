@@ -11,6 +11,7 @@ This feature engineering step is designed for the advanced rubric tier: it creat
 - Additional benchmark target: `target_sp500_excess_return_3m` = next 3-month stock return minus next 3-month S&P 500 return.
 - Additional classification target: `target_outperform_sp500_next_quarter` = 1 when the stock outperforms the S&P 500 over the next quarter.
 - The target uses future months only; current-month features are not used in target construction.
+- Forward-looking helper columns used during target construction are excluded from model features.
 
 ## Engineered Feature Families
 
@@ -30,7 +31,7 @@ This feature engineering step is designed for the advanced rubric tier: it creat
 
 - Input rows: 764,912
 - Modelable rows: 191,513
-- Numeric features: 184
+- Numeric features: 182
 - Categorical features: 12
 - S&P 500 source: `/Users/yiyi/Documents/GitHub/GR5243-Project4/data/sp500_daily.csv`
 - Rows with S&P 500 benchmark target: 191,513

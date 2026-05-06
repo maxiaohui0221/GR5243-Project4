@@ -1,0 +1,11 @@
+model,variant,train_auc,validation_auc,validation_balanced_accuracy_at_threshold,selected_threshold,params
+Logistic Regression,C=0.1,0.6458673664595063,0.6085986150148781,0.5843323103375522,0.5,"{""C"": 0.1, ""class_weight"": ""balanced""}"
+Logistic Regression,C=1.0,0.6461986864454918,0.6069365479894556,0.5833118205121366,0.49500000000000005,"{""C"": 1.0, ""class_weight"": ""balanced""}"
+Logistic Regression,C=10.0,0.6462231979820023,0.606823895176682,0.5830290820199296,0.49500000000000005,"{""C"": 10.0, ""class_weight"": ""balanced""}"
+Random Forest,max_depth=6,0.6968641540256086,0.6295476517578471,0.5940317532878543,0.44000000000000006,"{""n_estimators"": 180, ""max_depth"": 6, ""min_samples_leaf"": 75, ""max_features"": ""sqrt"", ""class_weight"": ""balanced_subsample""}"
+Random Forest,max_depth=10,0.7758644317106153,0.6338743236951043,0.6053711522465084,0.43500000000000005,"{""n_estimators"": 180, ""max_depth"": 10, ""min_samples_leaf"": 75, ""max_features"": ""sqrt"", ""class_weight"": ""balanced_subsample""}"
+Random Forest,max_depth=None,0.8238407361270917,0.6192276725411118,0.5886676338847243,0.43500000000000005,"{""n_estimators"": 180, ""max_depth"": null, ""min_samples_leaf"": 75, ""max_features"": ""sqrt"", ""class_weight"": ""balanced_subsample""}"
+HistGradientBoosting,"lr=0.03, leaves=15, l2=0.0",0.764451912655379,0.6256175351824054,0.6012708833008772,0.4600000000000001,"{""learning_rate"": 0.03, ""max_leaf_nodes"": 15, ""l2_regularization"": 0.0, ""max_iter"": 250, ""class_weight"": ""balanced""}"
+HistGradientBoosting,"lr=0.05, leaves=31, l2=0.0",0.8150541706667063,0.6352495931863873,0.6090406595352018,0.42000000000000004,"{""learning_rate"": 0.05, ""max_leaf_nodes"": 31, ""l2_regularization"": 0.0, ""max_iter"": 250, ""class_weight"": ""balanced""}"
+HistGradientBoosting,"lr=0.05, leaves=31, l2=0.1",0.8133420426537314,0.6319511168882821,0.6054288094366207,0.42500000000000004,"{""learning_rate"": 0.05, ""max_leaf_nodes"": 31, ""l2_regularization"": 0.1, ""max_iter"": 250, ""class_weight"": ""balanced""}"
+HistGradientBoosting,"lr=0.08, leaves=31, l2=0.1",0.8371298511309568,0.6083148003763784,0.5854073956410922,0.395,"{""learning_rate"": 0.08, ""max_leaf_nodes"": 31, ""l2_regularization"": 0.1, ""max_iter"": 250, ""class_weight"": ""balanced""}"

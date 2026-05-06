@@ -1,0 +1,42 @@
+{
+  "config": {
+    "feature_dir": "outputs/feature_engineering",
+    "output_dir": "outputs/modeling",
+    "target_col": "target_outperform_sp500_next_quarter",
+    "excess_return_col": "target_sp500_excess_return_3m",
+    "max_importance_rows": "3000",
+    "top_quantile": "0.1"
+  },
+  "final_model": "Logistic Regression",
+  "selected_threshold": 0.5,
+  "best_params": {
+    "Logistic Regression": {
+      "C": 0.1,
+      "class_weight": "balanced"
+    },
+    "Random Forest": {
+      "n_estimators": 180,
+      "max_depth": 10,
+      "min_samples_leaf": 75,
+      "max_features": "sqrt",
+      "class_weight": "balanced_subsample"
+    },
+    "HistGradientBoosting": {
+      "learning_rate": 0.05,
+      "max_leaf_nodes": 31,
+      "l2_regularization": 0.0,
+      "max_iter": 250,
+      "class_weight": "balanced"
+    }
+  },
+  "portfolio_summary": {
+    "months": 11,
+    "mean_long_short_return": 0.032895901259956464,
+    "annualized_return": 0.13158360503982586,
+    "annualized_volatility": 0.15129128570423744,
+    "annualized_sharpe": 0.8697368419292929,
+    "final_cumulative_return": 0.3892580185294878
+  },
+  "feature_count_raw": 194,
+  "feature_count_transformed": 299
+}

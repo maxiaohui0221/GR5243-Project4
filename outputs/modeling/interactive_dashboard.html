@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 4 Modeling Dashboard</title>
+<style>
+:root {
+  --ink: #1f2933;
+  --muted: #65758b;
+  --line: #d8dee9;
+  --blue: #2f6b9a;
+  --green: #2f6b3f;
+  --red: #b84a4a;
+  --gold: #9a6a20;
+  --bg: #f7f8fb;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
+header { padding: 28px 32px 18px; background: #fff; border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
+h2 { margin: 0 0 14px; font-size: 20px; }
+p { margin: 8px 0; color: var(--muted); line-height: 1.45; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 22px 24px 40px; }
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.tabs button { border: 1px solid var(--line); background: #fff; padding: 9px 13px; border-radius: 6px; cursor: pointer; font-weight: 600; color: var(--ink); }
+.tabs button.active { background: var(--blue); border-color: var(--blue); color: white; }
+.panel { display: none; }
+.panel.active { display: block; }
+.grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+.card { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+.span4 { grid-column: span 4; }
+.span6 { grid-column: span 6; }
+.span12 { grid-column: span 12; }
+.metric { font-size: 30px; font-weight: 750; margin-top: 6px; }
+.label { color: var(--muted); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; }
+th { color: var(--muted); font-weight: 700; background: #fafafa; }
+svg { width: 100%; height: auto; display: block; }
+.bar-label { font-size: 12px; fill: var(--ink); }
+.bar-value-inside { font-size: 12px; fill: #fff; font-weight: 700; }
+.table-scroll { overflow-x: auto; width: 100%; }
+.axis { stroke: var(--line); stroke-width: 1; }
+.note { font-size: 13px; color: var(--muted); margin-top: 10px; }
+select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: white; }
+@media (max-width: 760px) {
+  .span4, .span6, .span12 { grid-column: span 12; }
+  header { padding: 22px 20px 16px; }
+  .wrap { padding: 18px 14px 32px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Project 4 Modeling Dashboard</h1>
+  <p>Interactive summary of the supervised-learning workflow, final model, feature importance, and portfolio diagnostics.</p>
+</header>
+<main class="wrap">
+  <div class="tabs">
+    <button class="active" data-tab="overview">Overview</button>
+    <button data-tab="models">Model Comparison</button>
+    <button data-tab="features">Feature Importance</button>
+    <button data-tab="portfolio">Portfolio Diagnostic</button>
+  </div>
+
+  <section id="overview" class="panel active">
+    <div class="grid">
+      <div class="card span4"><div class="label">Selected Final Model</div><div class="metric">Logistic Regression</div></div>
+      <div class="card span4"><div class="label">Test ROC AUC</div><div class="metric" id="testAuc"></div></div>
+      <div class="card span4"><div class="label">Annualized Long-Short Sharpe</div><div class="metric" id="sharpe"></div></div>
+      <div class="card span12">
+        <h2>Workflow Signal</h2>
+        <p>The project combines Compustat accounting variables and CRSP market data, creates leakage-controlled next-quarter outperformance targets, compares multiple supervised models on chronological validation/test periods, and interprets model behavior through feature importance and economic ranking diagnostics.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="models" class="panel">
+    <div class="grid">
+      <div class="card span12">
+        <h2>Held-Out Metrics</h2>
+        <label>Metric <select id="metricSelect">
+          <option value="roc_auc">ROC AUC</option>
+          <option value="average_precision">Average Precision</option>
+          <option value="balanced_accuracy">Balanced Accuracy</option>
+          <option value="f1">F1</option>
+        </select></label>
+        <div id="modelBars"></div>
+      </div>
+      <div class="card span12"><h2>Full Metric Table</h2><div id="metricTable" class="table-scroll"></div></div>
+    </div>
+  </section>
+
+  <section id="features" class="panel">
+    <div class="grid">
+      <div class="card span6"><h2>Top Features</h2><div id="featureBars"></div></div>
+      <div class="card span6"><h2>Importance by Feature Family</h2><div id="familyBars"></div></div>
+    </div>
+  </section>
+
+  <section id="portfolio" class="panel">
+    <div class="grid">
+      <div class="card span4"><div class="label">Mean Long-Short Return</div><div class="metric" id="lsMean"></div></div>
+      <div class="card span4"><div class="label">Final Cumulative Return</div><div class="metric" id="lsCum"></div></div>
+      <div class="card span4"><div class="label">Test Months</div><div class="metric" id="lsMonths"></div></div>
+      <div class="card span6"><h2>Top-K Precision</h2><div id="topKTable"></div></div>
+      <div class="card span6"><h2>Cumulative Long-Short Excess Return</h2><div id="lineChart"></div><div class="note">Diagnostic uses overlapping next-quarter excess returns and does not subtract transaction costs.</div></div>
+    </div>
+  </section>
+</main>
+<script>
+const metrics = [{"model": "Logistic Regression", "split": "train", "threshold": 0.5, "accuracy": 0.605681, "balanced_accuracy": 0.601502, "precision": 0.512096, "recall": 0.579409, "f1": 0.543677, "roc_auc": 0.645867, "average_precision": 0.550599, "log_loss": 0.659051, "brier_score": 0.233382, "positive_rate": 0.405416, "predicted_positive_rate": 0.458706}, {"model": "Logistic Regression", "split": "validation", "threshold": 0.5, "accuracy": 0.615327, "balanced_accuracy": 0.584332, "precision": 0.466755, "recall": 0.47334, "f1": 0.470025, "roc_auc": 0.608599, "average_precision": 0.449847, "log_loss": 0.667419, "brier_score": 0.237012, "positive_rate": 0.360374, "predicted_positive_rate": 0.365458}, {"model": "Logistic Regression", "split": "test", "threshold": 0.5, "accuracy": 0.546341, "balanced_accuracy": 0.528163, "precision": 0.446469, "recall": 0.425252, "f1": 0.435603, "roc_auc": 0.536133, "average_precision": 0.442361, "log_loss": 0.697025, "brier_score": 0.251338, "positive_rate": 0.411678, "predicted_positive_rate": 0.392115}, {"model": "Random Forest", "split": "train", "threshold": 0.435, "accuracy": 0.635902, "balanced_accuracy": 0.673807, "precision": 0.53095, "recall": 0.874183, "f1": 0.660645, "roc_auc": 0.775864, "average_precision": 0.708226, "log_loss": 0.598577, "brier_score": 0.205793, "positive_rate": 0.405416, "predicted_positive_rate": 0.667498}, {"model": "Random Forest", "split": "validation", "threshold": 0.435, "accuracy": 0.579178, "balanced_accuracy": 0.605371, "precision": 0.446446, "recall": 0.69917, "f1": 0.544933, "roc_auc": 0.633874, "average_precision": 0.470082, "log_loss": 0.646948, "brier_score": 0.227613, "positive_rate": 0.360374, "predicted_positive_rate": 0.564374}, {"model": "Random Forest", "split": "test", "threshold": 0.435, "accuracy": 0.487107, "balanced_accuracy": 0.504703, "precision": 0.415483, "recall": 0.604317, "f1": 0.492417, "roc_auc": 0.520212, "average_precision": 0.433694, "log_loss": 0.687817, "brier_score": 0.247402, "positive_rate": 0.411678, "predicted_positive_rate": 0.598783}, {"model": "HistGradientBoosting", "split": "train", "threshold": 0.42, "accuracy": 0.686863, "balanced_accuracy": 0.715628, "precision": 0.575481, "recall": 0.867687, "f1": 0.692002, "roc_auc": 0.815054, "average_precision": 0.753196, "log_loss": 0.538624, "brier_score": 0.181332, "positive_rate": 0.405416, "predicted_positive_rate": 0.611269}, {"model": "HistGradientBoosting", "split": "validation", "threshold": 0.42, "accuracy": 0.589607, "balanced_accuracy": 0.609041, "precision": 0.453613, "recall": 0.678631, "f1": 0.543762, "roc_auc": 0.63525, "average_precision": 0.448012, "log_loss": 0.647959, "brier_score": 0.228115, "positive_rate": 0.360374, "predicted_positive_rate": 0.53914}, {"model": "HistGradientBoosting", "split": "test", "threshold": 0.42, "accuracy": 0.487895, "balanced_accuracy": 0.487171, "precision": 0.399204, "recall": 0.48307, "f1": 0.437151, "roc_auc": 0.478933, "average_precision": 0.381907, "log_loss": 0.761139, "brier_score": 0.276444, "positive_rate": 0.411678, "predicted_positive_rate": 0.498166}, {"model": "Logistic Regression", "split": "test_refit_train_validation", "threshold": 0.5, "accuracy": 0.558134, "balanced_accuracy": 0.530635, "precision": 0.455464, "recall": 0.374959, "f1": 0.411309, "roc_auc": 0.550239, "average_precision": 0.45, "log_loss": 0.68835, "brier_score": 0.247242, "positive_rate": 0.411678, "predicted_positive_rate": 0.338913}];
+const topK = [{"portfolio": "Top 5%", "rows": 1840, "precision": 0.488587, "mean_predicted_probability": 0.697061}, {"portfolio": "Top 10%", "rows": 3680, "precision": 0.475543, "mean_predicted_probability": 0.661817}, {"portfolio": "Top 20%", "rows": 7360, "precision": 0.469565, "mean_predicted_probability": 0.618403}];
+const features = [{"clean_feature": "momentum_score", "family": "Composite/unsupervised", "importance_share": 0.040101}, {"clean_feature": "log_market_cap", "family": "Market behavior", "importance_share": 0.029619}, {"clean_feature": "log_market_cap_month_rank", "family": "Relative position", "importance_share": 0.019988}, {"clean_feature": "sic2_24", "family": "Context/categorical", "importance_share": 0.019093}, {"clean_feature": "low_volatility_6m_month_rank", "family": "Relative position", "importance_share": 0.015981}, {"clean_feature": "volatility_6m_month_rank", "family": "Relative position", "importance_share": 0.015981}, {"clean_feature": "log_market_cap_industry_relative", "family": "Relative position", "importance_share": 0.015188}, {"clean_feature": "sic2_17", "family": "Context/categorical", "importance_share": 0.01517}, {"clean_feature": "sic2_23", "family": "Context/categorical", "importance_share": 0.01492}, {"clean_feature": "sic2_48", "family": "Context/categorical", "importance_share": 0.014476}, {"clean_feature": "risk_adjusted_momentum", "family": "Composite/unsupervised", "importance_share": 0.013201}, {"clean_feature": "sic2_29", "family": "Context/categorical", "importance_share": 0.012667}, {"clean_feature": "sic2_22", "family": "Context/categorical", "importance_share": 0.012607}, {"clean_feature": "momentum_6m_month_rank", "family": "Relative position", "importance_share": 0.012467}, {"clean_feature": "market_excess_momentum_6m", "family": "Market behavior", "importance_share": 0.012211}, {"clean_feature": "sic_division_Agriculture", "family": "Context/categorical", "importance_share": 0.011102}, {"clean_feature": "quality_score", "family": "Composite/unsupervised", "importance_share": 0.011026}, {"clean_feature": "sic2_40", "family": "Context/categorical", "importance_share": 0.010584}, {"clean_feature": "sic2_39", "family": "Context/categorical", "importance_share": 0.010489}, {"clean_feature": "risk_score", "family": "Composite/unsupervised", "importance_share": 0.01018}, {"clean_feature": "momentum_12m_month_rank", "family": "Relative position", "importance_share": 0.010171}, {"clean_feature": "sic2_1", "family": "Context/categorical", "importance_share": 0.009822}, {"clean_feature": "momentum_6m", "family": "Market behavior", "importance_share": 0.009246}, {"clean_feature": "sic2_70", "family": "Context/categorical", "importance_share": 0.008822}, {"clean_feature": "sic2_28", "family": "Context/categorical", "importance_share": 0.008772}, {"clean_feature": "sic2_25", "family": "Context/categorical", "importance_share": 0.008692}, {"clean_feature": "sic2_62", "family": "Context/categorical", "importance_share": 0.008665}, {"clean_feature": "sic2_67", "family": "Context/categorical", "importance_share": 0.008575}, {"clean_feature": "sic2_16", "family": "Context/categorical", "importance_share": 0.00846}, {"clean_feature": "sic2_35", "family": "Context/categorical", "importance_share": 0.008048}];
+const families = [{"family": "Context/categorical", "importance_share": 0.516945}, {"family": "Relative position", "importance_share": 0.155733}, {"family": "Market behavior", "importance_share": 0.118768}, {"family": "Composite/unsupervised", "importance_share": 0.111744}, {"family": "Accounting fundamentals", "importance_share": 0.09681}];
+const longShort = [{"model_date": "2024-11-30", "long_mean_excess_return": -0.003174, "short_mean_excess_return": -0.098136, "long_short_excess_return": 0.094961, "rows": 201, "portfolio_rows": 20, "cumulative_long_short_return": 0.094961}, {"model_date": "2024-12-31", "long_mean_excess_return": 0.013538, "short_mean_excess_return": -0.099999, "long_short_excess_return": 0.113537, "rows": 8498, "portfolio_rows": 849, "cumulative_long_short_return": 0.21928}, {"model_date": "2025-01-31", "long_mean_excess_return": -0.125012, "short_mean_excess_return": -0.038914, "long_short_excess_return": -0.086098, "rows": 387, "portfolio_rows": 38, "cumulative_long_short_return": 0.114302}, {"model_date": "2025-02-28", "long_mean_excess_return": 0.05231, "short_mean_excess_return": 0.030141, "long_short_excess_return": 0.022169, "rows": 198, "portfolio_rows": 19, "cumulative_long_short_return": 0.139005}, {"model_date": "2025-03-31", "long_mean_excess_return": 0.057329, "short_mean_excess_return": 0.041683, "long_short_excess_return": 0.015645, "rows": 8678, "portfolio_rows": 867, "cumulative_long_short_return": 0.156825}, {"model_date": "2025-04-30", "long_mean_excess_return": 0.097699, "short_mean_excess_return": -0.03036, "long_short_excess_return": 0.128059, "rows": 385, "portfolio_rows": 38, "cumulative_long_short_return": 0.304967}, {"model_date": "2025-05-31", "long_mean_excess_return": 0.100933, "short_mean_excess_return": 0.031763, "long_short_excess_return": 0.06917, "rows": 196, "portfolio_rows": 19, "cumulative_long_short_return": 0.395232}, {"model_date": "2025-06-30", "long_mean_excess_return": 0.042009, "short_mean_excess_return": 0.117425, "long_short_excess_return": -0.075415, "rows": 8833, "portfolio_rows": 883, "cumulative_long_short_return": 0.29001}, {"model_date": "2025-07-31", "long_mean_excess_return": -0.044758, "short_mean_excess_return": -0.028366, "long_short_excess_return": -0.016393, "rows": 379, "portfolio_rows": 37, "cumulative_long_short_return": 0.268864}, {"model_date": "2025-08-31", "long_mean_excess_return": -0.000417, "short_mean_excess_return": 0.011888, "long_short_excess_return": -0.012305, "rows": 195, "portfolio_rows": 19, "cumulative_long_short_return": 0.25325}, {"model_date": "2025-09-30", "long_mean_excess_return": 0.013874, "short_mean_excess_return": -0.09465, "long_short_excess_return": 0.108524, "rows": 8853, "portfolio_rows": 885, "cumulative_long_short_return": 0.389258}];
+const stats = {"months": 11, "mean_long_short_return": 0.032895901259956464, "annualized_return": 0.13158360503982586, "annualized_volatility": 0.15129128570423744, "annualized_sharpe": 0.8697368419292929, "final_cumulative_return": 0.3892580185294878};
+const finalModel = "Logistic Regression";
+
+function fmtPct(x, digits=1) { return x === null || Number.isNaN(x) ? "NA" : (100*x).toFixed(digits) + "%"; }
+function fmtNum(x, digits=3) { return x === null || Number.isNaN(x) ? "NA" : Number(x).toFixed(digits); }
+
+document.querySelectorAll(".tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  });
+});
+
+function table(rows, cols) {
+  const head = "<tr>" + cols.map(c => `<th>${c.label}</th>`).join("") + "</tr>";
+  const body = rows.map(r => "<tr>" + cols.map(c => `<td>${c.format ? c.format(r[c.key]) : r[c.key]}</td>`).join("") + "</tr>").join("");
+  return `<table>${head}${body}</table>`;
+}
+
+function barChart(rows, labelKey, valueKey, color="#2f6b9a", width=760, barH=25) {
+  const maxVal = Math.max(...rows.map(r => Number(r[valueKey]) || 0), 1e-9);
+  const height = rows.length * (barH + 8) + 22;
+  const left = 185, right = 92;
+  const chartW = width - left - right;
+  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img">`;
+  rows.forEach((r, i) => {
+    const y = 12 + i * (barH + 8);
+    const w = chartW * ((Number(r[valueKey]) || 0) / maxVal);
+    const label = String(r[labelKey]).replaceAll("&", "&amp;");
+    const value = fmtPct(r[valueKey], 1);
+    const outsideX = left + w + 8;
+    const maxTextX = width - 8;
+    svg += `<text class="bar-label" x="0" y="${y+17}">${label.slice(0, 34)}</text>`;
+    svg += `<rect x="${left}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${color}"></rect>`;
+    if (outsideX + 48 > maxTextX && w > 64) {
+      svg += `<text class="bar-value-inside" x="${left+w-8}" y="${y+17}" text-anchor="end">${value}</text>`;
+    } else {
+      svg += `<text class="bar-label" x="${outsideX}" y="${y+17}">${value}</text>`;
+    }
+  });
+  svg += "</svg>";
+  return svg;
+}
+
+function lineChart(rows) {
+  if (!rows.length) return "<p>No long-short rows available.</p>";
+  const width = 620, height = 310, pad = 42;
+  const vals = rows.map(r => Number(r.cumulative_long_short_return) || 0);
+  const minV = Math.min(...vals, 0), maxV = Math.max(...vals, 0);
+  const span = Math.max(maxV - minV, 1e-9);
+  const points = vals.map((v, i) => {
+    const x = pad + i * ((width - 2*pad) / Math.max(rows.length - 1, 1));
+    const y = height - pad - ((v - minV) / span) * (height - 2*pad);
+    return `${x},${y}`;
+  }).join(" ");
+  const zeroY = height - pad - ((0 - minV) / span) * (height - 2*pad);
+  return `<svg viewBox="0 0 ${width} ${height}">
+    <line class="axis" x1="${pad}" x2="${width-pad}" y1="${zeroY}" y2="${zeroY}"></line>
+    <polyline points="${points}" fill="none" stroke="#b84a4a" stroke-width="3"></polyline>
+    <text class="bar-label" x="${pad}" y="24">${rows[0].model_date}</text>
+    <text class="bar-label" x="${width-pad-80}" y="24">${rows[rows.length-1].model_date}</text>
+    <text class="bar-label" x="${pad}" y="${height-10}">${fmtPct(minV, 0)}</text>
+    <text class="bar-label" x="${pad}" y="42">${fmtPct(maxV, 0)}</text>
+  </svg>`;
+}
+
+function renderModels() {
+  const metric = document.getElementById("metricSelect").value;
+  const rows = metrics.filter(r => r.split === "test").sort((a, b) => b[metric] - a[metric]);
+  document.getElementById("modelBars").innerHTML = barChart(rows, "model", metric, "#2f6b9a");
+  document.getElementById("metricTable").innerHTML = table(metrics, [
+    {key:"model", label:"Model"},
+    {key:"split", label:"Split"},
+    {key:"roc_auc", label:"ROC AUC", format:x=>fmtNum(x,4)},
+    {key:"average_precision", label:"Avg Precision", format:x=>fmtNum(x,4)},
+    {key:"balanced_accuracy", label:"Balanced Acc.", format:x=>fmtNum(x,4)},
+    {key:"f1", label:"F1", format:x=>fmtNum(x,4)}
+  ]);
+}
+
+document.getElementById("metricSelect").addEventListener("change", renderModels);
+renderModels();
+document.getElementById("featureBars").innerHTML = barChart(features.slice(0, 15), "clean_feature", "importance_share", "#2f6b3f");
+document.getElementById("familyBars").innerHTML = barChart(families, "family", "importance_share", "#9a6a20");
+document.getElementById("topKTable").innerHTML = table(topK, [
+  {key:"portfolio", label:"Portfolio"},
+  {key:"rows", label:"Rows"},
+  {key:"precision", label:"Precision", format:x=>fmtPct(x,1)},
+  {key:"mean_predicted_probability", label:"Mean Pred.", format:x=>fmtPct(x,1)}
+]);
+document.getElementById("lineChart").innerHTML = lineChart(longShort);
+
+const finalTest = metrics.find(r => r.model === finalModel && r.split === "test_refit_train_validation")
+  || metrics.find(r => r.model === finalModel && r.split === "test")
+  || {};
+document.getElementById("testAuc").textContent = fmtNum(finalTest.roc_auc, 3);
+document.getElementById("sharpe").textContent = fmtNum(stats.annualized_sharpe, 2);
+document.getElementById("lsMean").textContent = fmtPct(stats.mean_long_short_return, 2);
+document.getElementById("lsCum").textContent = fmtPct(stats.final_cumulative_return, 1);
+document.getElementById("lsMonths").textContent = stats.months ?? "NA";
+</script>
+</body>
+</html>

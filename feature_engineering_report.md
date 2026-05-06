@@ -16,6 +16,8 @@ Two targets are created:
 
 The equal-weight benchmark remains the primary target, and the S&P 500 benchmark is added as an additional comparison. Both targets use months after the observation date only. Chronological train/validation/test splits are used so preprocessing and unsupervised transformations are fitted on the training period before being applied to later periods.
 
+Forward-looking helper columns used during target construction, including `market_return_fwd_3m` and `days_to_next_observation`, are excluded from the final predictor list. This keeps future market information and future data-availability information out of the supervised feature matrix.
+
 ## Feature Families
 
 The engineered features are intentionally grouped around economic mechanisms that should matter for future relative stock performance.
@@ -81,4 +83,4 @@ Running the script creates:
 - `outputs/feature_engineering/feature_engineering_output_report.md`
 - `data/sp500_daily.csv`: S&P 500 price-index data used to construct the additional S&P 500 benchmark target.
 
-These files give the supervised modeling section a clean, reproducible input table with transparent targets, engineered predictors, preprocessing artifacts, and split documentation.
+These files give the supervised modeling section a clean, reproducible input table with transparent targets, leakage-controlled engineered predictors, preprocessing artifacts, and split documentation.

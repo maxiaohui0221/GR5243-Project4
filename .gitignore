@@ -4,5 +4,6 @@ __pycache__/
 .DS_Store
 outputs/feature_engineering/engineered_features.csv.gz
 outputs/feature_engineering/feature_train.csv.gz
+outputs/.matplotlib/
 .idea/
 .idea/

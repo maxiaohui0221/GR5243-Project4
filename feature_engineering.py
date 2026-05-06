@@ -91,6 +91,14 @@ TARGET_ALIASES = {
     "market_return_fwd_3m": TARGET_MARKET_RETURN_COL,
 }
 
+FORWARD_LOOKING_COLUMNS = {
+    # Source columns created during earlier preprocessing that describe future
+    # outcomes or future data availability. They may be useful for target
+    # construction/auditing, but they must never be used as predictors.
+    "market_return_fwd_3m",
+    "days_to_next_observation",
+}
+
 SP500_INPUT_CANDIDATE_NAMES = [
     "sp500_daily.csv",
     "sp500.csv",
@@ -898,6 +906,8 @@ def select_feature_columns(frame: pd.DataFrame, config: FeatureEngineeringConfig
         "ret_m_clean",
         "log_ret_m",
     }
+    excluded |= set(TARGET_ALIASES.keys())
+    excluded |= FORWARD_LOOKING_COLUMNS
     excluded |= {col for col in frame.columns if col.startswith("target_")}
 
     nonmissing_rate = frame.notna().mean()
@@ -1028,6 +1038,7 @@ def write_dynamic_report(
         f"- Additional benchmark target: `{SP500_EXCESS_RETURN_COL}` = next 3-month stock return minus next 3-month S&P 500 return.",
         f"- Additional classification target: `{SP500_BINARY_COL}` = 1 when the stock outperforms the S&P 500 over the next quarter.",
         "- The target uses future months only; current-month features are not used in target construction.",
+        "- Forward-looking helper columns used during target construction are excluded from model features.",
         "",
         "## Engineered Feature Families",
         "",
